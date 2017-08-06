@@ -1,0 +1,13 @@
+#!/bin/bash
+
+/usr/bin/g++ -I../include -I../JuceLibraryCode -ffast-math -funroll-loops -O3 -msse -I/usr/local/Cellar/ffmpeg/2.5.4/include -I/usr/local/Cellar/ffmpeg/2.5.4/include -DDEBUG -ObjC++ -DPNG_NO_CONFIG_H -g -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -std=c++11 -o SBSMSView sms.o track.o trackpoint.o resample.o sbsms.o fft.o grain.o buffer.o dBTable.o slide.o synthTable.o subband.o convert.o pcm.o mp3.o ffmpeg.o mp3tech.o import.o audiobuffer.o Main.o MainWindow.o TimeFrequencyView.o Audio.o juce_audio_basics.o juce_audio_devices.o juce_audio_formats.o juce_audio_processors.o juce_core.o juce_cryptography.o juce_data_structures.o juce_events.o juce_graphics.o juce_gui_basics.o juce_gui_extra.o juce_opengl.o juce_video.o -Wl,-bind_at_load  -framework Accelerate -framework AudioToolbox -framework Carbon -framework Cocoa -framework CoreAudio -framework CoreMIDI -framework DiscRecording -framework IOKit -framework OpenGL -framework QTKit -framework QuartzCore -framework QuickTime -framework WebKit -L/usr/local/Cellar/libsndfile/1.0.25/lib -lsndfile -lmad -L/usr/local/Cellar/ffmpeg/2.5.4/lib -lavcodec -l
+export SNDFILE_LIBS=/usr/local/lib/libsndfile.a
+export SNDFILE_CFLAGS=-I/usr/local/include
+
+export PORTAUDIO_LIBS="/usr/local/lib/libportaudio.a -framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework Carbon"
+export PORTAUDIO_CFLAGS=-I/usr/local/include
+
+export MAD_LIBS=/usr/local/lib/libmad.a
+
+./configure --enable-mp3 --enable-sndfile --enable-portaudio --enable-wx --enable-static --disable-dependency-tracking --enable-universal_binary --enable-multithreaded
+make

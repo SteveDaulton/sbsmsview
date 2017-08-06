@@ -1,0 +1,11 @@
+I can't tell if it's because the middle 5 trackpoint is not being removed, or if another track is being started next timestep and split from the 5->6 stitched track
+
+"solve" by don't split merge stitched tracks
+but still, these dup stitch tracks shouldn't even be started
+
+absorbing problem,
+also what if they are a dup
+
+81408 154
+
+minTrackSize is large.  absorbing could put a lot of energy in a random track

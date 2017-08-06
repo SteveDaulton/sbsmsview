@@ -1,0 +1,332 @@
+Actual plan
+1) joint stereo, f is at peak, fc[c] is at centroids for channels
+2) all assignment will operate on f
+3) rendering will operate on fc
+4) fc will be synced to the joint centroid if the difference fc[1] - fc[0] is small, in the sense of a running threshhold average, in a stage like merit()
+5) slitmerge will be restored, but it won't directly affect synthesis.  Only if there is a closed loop (1 split 2, 2 merge 1) or (1 split 2, 1 merge 2) and perhaps some constraints on the period or the variation in frequencies, amplitudes, etc, will a change occur:  the period between the split and an the merge in which the tracks coexist will be merged; the new fc[] will be the centroid of the two tracks , point by point based on the tp->f2[].  f is no longer relevant (this is post-assignment), so need not be updated.
+
+
+
+
+
+find frequency omega of oscillation of a track f,m
+
+find neighboring tracks with a similar oscillation
+omega should be close to the average delta f of the tracks:
+omega ~ (f2-f1)/2 
+E.g. 
+C2 130.8Hz
+D2 146.8Hz
+period of ~14 frames = 14*384=5376 samples
+omega ~ 8.2 Hz
+(f2-f1)/2 = 8 Hz
+
+
+Dangling tracks: for last ditch connections (esp. large df), dangle track, i.e. bifurcate it, and see if it can make a better connection dangling, or if the large df connection is consistent (have a simple metric like small d2f/dt2).  
+
+Regarding split tracks and beating:
+
+It is easier to represent these as a single tracks with AM.  However they may also look like onsets.
+
+
+Could always use joint tracks, but they could have a variation of f between channels.
+m2 and f would be calculated separately, and then during trim, a running measure of coherence could be kept, which would determine if f splits.
+
+
+*** implement both joint/split stereo
+
+1) detect split tracks to merge
+2) joint stereo somewhere between points and tracks
+3) choir high frequency, df, etc
+
+
+It might be useful to explicitly model split peaks as an amplitude modeulation of a single peak (ringing).  This might need to take phase of the two peaks into consideration
+
+Phase is a nightmare.
+COnsier just the amplitudes.
+For beating, how are df/dt, Df = (f2-f1)/2, f = (f1+f2)/2 and window size, h, etc related.
+
+cos(f1 t) + cos(f2 t) ~ A(f) cos(Df t) cos(f t)
+
+The regime is dA(f)/dt ~ A Df 
+If dA(f)/dt >> A(f)/N2, then the window is not resolving amplitude changes, so peak splitting may occur.
+On the other hand, the frequency resolution of the window is ~ 1/N2.
+
+Changes to A(f) occuring over a time < N2 will lead to beating.
+
+
+It would be very powerful to allow swtitching between models in the midst of processing.
+e.g.
+1) Switching FFT frequency resolution (N1,N2)
+2) Switching from joint stereo to L/R stereo
+This could be accomplished by
+1) keeping both representations, and amplitude envelope transitioning over a few frames.
+This could be done band by band, or even track by track.
+2) Time-stitching the track level representations
+
+For stereo, it is possible to peak find for each channel and for joint channel.
+
+
+at onset, go back and find a "switch", where phase is actually set.  It should have phase accuracy, but have low amplitude
+
+stiched onsets:
+Currently, when a track is ended, 
+
+face2014:
+each position represents a time-frequency window 
+
+la chanson!
+I thought the onset ws causing a blip, but the psycho-acoustically noticeable problem is actually phase matching too late, so the onset should be earlier
+
+Add a step before onset detection.  When a track starts, look back some number of steps (like onsetLength).  Kep a record of nearest tracks, measure with cumulative match merit
+
+Cases
+1) peak splits, and track goes one way, not connecting with other end, leading to discontinutiy
+2) track skips, and either ends, or deviates.  A new track starts afterwards
+
+track hang
+
+choir t5 2984 splitmerge stereo?
+
+dummys and absorb!!!
+
+If stereo onsets are synchronized, then both channels need to meet some merit threshold, not simply the average of the channels merits.
+
+cozy stereo match cozy and**tight
+--neads an onset, to match phase
+
+choir
+--too many onsets because of chorusing, track splitting
+
+ntyfi
+--blip caused by broken track. 1.9s
+
+adjust: don't cut near a mag2 peak
+
+:
+cozyStill need to have combine jmp merit with a more forgiving dt merit;  the ideal step onset is never obtained in practice...
+
+Also, phase reset (switch) is not coincident with amplitude onset.  Is it possible to detect onset, and backtrack to find point with minimum amplitude.  If latency was provided at synth time,  the phase could be back-propagated.  Alternatively, could backtrack from onset, continuing to minimum, but only while there is phase congruity
+---
+cozy stereo match cozy and**tight
+
+valid singleton iff bStitchStart and size() == 1
+if a track has a stitch end but the following track is a singleton
+
+Case: M0 time%2
+M0 -> L1
+L1->dup[0] = M0
+ L1->dup[1] = NULL
+
+
+t5 890
+XXX singletpons when ending tracks.  For the purposes of assignment, we need to keep singleton tracks, but once they are ended they can be discarded.
+
+"what if we were to exch**ange addresses"
+"and **became penpals"
+
+It would be nice to phase jump before an onset when m is minimal.  However this requires knowing the future stretch,pitch, which implies a latency, of e.g. 4
+
+Nope - assignFind could earch M2->M0, M2->L0 when offsetlo==1
+
+
+crash when t->bEnded && assingfromcache tp->flags & TrackEnd: i think because selection was changed (i keypress)
+
+the onset predictor needs to be smarter, and not just measure deviations from ideal onset.  idea:
+split dt into forward and backward parts, by zeroing the negative or positive parts of the window.
+
+How to differentiate between sp3 like onsets(which get low merit)
+and am,fm blackcherry false onsets, which get high merit
+
+preserve phase in synth
+
+test phase on e.g. square wave (sp3)
+automated test set
+
+!!! save selection
+
+idea:
+Hard onsets can sound bleepy, more so than magnitude "adjust".  Moreover, it is difficult to determien parameters that reliably detect appropriate onsets.  On the other hand, adjust is unpredictable and can lead to inappropriate modulations in amplitude.
+
+A combination of the two might work better: detect onsets, and adjust before the onsets, and after the offsets. 
+
+trackstitcher->synth crash!
+
+connect patch:
+hi
+M0->H1
+redundant with splitmerge?
+!also needs M0->M1
+tp1->slice->band == tp->slice->band && tp1->cont->slice->band < tp->slice->band
+Added assignFind (res==2) M1<-L1: will this prevent connect M0->L1
+
+lo
+tp1->dup[0] = tp1->dup[1]->cont
+tp1->dup[1]->cont->dup[2] = tp1
+
+
+
+If M0->M1, M1->dup[2] = L1
+L0->L1, M1->cont = L0, BUT L1->contF(L0) > L1->contF(M1) because L1->assignConnect is called before M2->assignFind, so L1 "doesn't know that it should be connected to M1"
+
+The assignment method currently does a strict depth first conncet
+
+H0 1 2 3 4
+M0   1   2
+L0       1
+
+start L0, M0, H0
+
+do {
+- L0->L1 L0->M2
+- M0->M1 M0->L1 M0->H2
+- H0->H1 H0->M1
+} while(!done)
+
+start H1
+
+do {
+- L0->L1 L0->M2
+- M0->M1 M0->L1 M0->H2
+- H1->H2 H1->M1
+} while(!done)
+
+start M1, H2
+
+Changes
+1) onsets / offsets
+2) assignConnect tp->cont->cont = tp, when stitching
+3) splitmerge
+
+splitmerge refcounts
+
+
+there are lots of boolean checks in nearestForward, assignConnect, etc
+I don't quite remember why I switched from lists to slices.
+In any case, I should be able to get the best of both approaches.
+
+When a track changes frequency rapidly, it may cause a splitting of the trackpoints at one time, so the track ends, and another track is started.  Keep track of ends and starts as in splitmerge, but dont split or merge, just join the starts with the ends with a threshold
+
+*** synth reverse track onsets/offsets
+
+It might be usefu lto take advantage of harmonic information, for synchronizing onsets.  It is not clear how to do this robustly.
+Psychoacoustical, it is possible for the lower band reproduction to sound ok on its own, and the higher band reproduction to sound ok on its own, but when mixed there is a decoherent sensation.
+
+Stereo processing of onsets/offsets might work better if channels are strictly locked (don't loop over channels), or "almost always" locked (looping over channels)
+One option is to look at sum or max of independent scores for both channels, and use this to determine onsets for both channels.  Then, to fully maintain syncronicity, don't offset unless both channels exceed a threshold.  This is not required, as one channel might fall out, but then any subsequent onsets will still be synchronous.
+
+The short window scaled magnitude is subject to rapid oscillations and is generally unpredictable.  The method is in principle more general than finding peak onsets and offsets, though.
+
+no addtional onsets unless an offset
+onsets near stitches
+
+optimal window for transient peaks
+
+--tracks that end just before onsets, remove trailing with large +dt
+
+allow hanging tracks before ending
+
+
+One difficulty is simply that there should usually be only be one onset, BUT there may be more if there are offsets in the midst of a track.
+On the other hand, there may be nothing resembling a canonical onset at the beginning of a sound; such may be the case when a transient splits into two tracks and the secondary track begins with large -dt
+
+case 1: start with small dt.  If dt does not increase beyond a threshold (average over a few points), then the onset is at the beginning.  Else, dt gets large, so look for a peak in the canonical merit function.   
+More generally, the onset might not be detected in a few steps, but later in the track e.g. at a transient, after already defaulting to the onset at the beginning.  In this case, there should be a new onset.  This can be implemented by modifying the magnitude of the preceding N2/h/2  trackpoints.  
+If an onset is detected right after a stitch, then modify as far back as possible
+
+case 2: start with large dt, just use merit function
+case 3: The secondary transient peaks (beginning often with large -dt), are psychoaustically masked by the larger primary peaks, 
+
+
+
+meandt[c]->setSize(N2/h/2);
+
+// Expected dt at onset
+flaot E0 = N2/8;
+// Expected D(dt) at onset
+float E1 = -min(E0,h/2);
+// Expected running average before onset
+float Emean = N2/4;
+
+float W0 = 0.5f;
+float W1 = 1.0f;
+float Wmean = 0.1f;
+float wStereo = 0.01f;
+float meritStereo = 0.1f;
+float wBand = 0.04f;
+
+
+float dt = tp1->dt[c];
+t->diffdt2[c]->push(dt);
+t->meandt[c]->push(dt);
+
+// 0th order
+float cost[2];
+cost[c] = W0 * square(dt  - E0);
+// 1st order
+cost[c] += W1 * square(t->diffdt2[c].get() - E1);
+// mean
+cost[c] += Wmean * square(t->meandt[c]->get() - Emean);
+
+float merit[2];
+if(channels == 1) {
+  merit[0] = 1.0f / (cost + 1e-5f);
+} else {
+  merit[0] = 1.0f / (cost + wStereo * cost[1] +  1e-5f);
+  merit[1] = 1.0f / (cost + wStereo * cost[0] +  1e-5f);
+  merit[0] += meritStereo * merit[1];
+  merit[1] += meritStereo * merit[0];
+}
+    
+
+t->onsetStats[c].push(cost);
+t->onsetStats[c].isFrontAPeak()
+
+
+
+Find candidate onsets based on dt, weight them by 
+
+1) magnitude
+
+
+at onsets there are often secondary peaks in the broadened spectrum from the transientthis will cause a new track to be started which should perhaps be absorbed by the primary peak.  The trackpoints often have large -dt, immediate onset, followed by decay and a quick end.
+
+spectrumabsorb by tracks, not by nearest tp in slice
+
+in naive onset tracking method with no lookahead, a detected onset may be soon followed by an onset delay, which causes blips.  It's not viable to just choose one onset and stick with it, as there may be tracks with dips, essentially marking offsets and onsets which can't be resolved with the windowing.
+
+
+for an immediate sine onset, dt=N2/8 when the window is centered on the onset.
+
+train a neural net, not to connect tracks but to determine onset times and spurious tracks
+
+idea #1: 
+
+
+delayed tracks multichannel
+lpc
+tf reassignment
+
+"5 has res 2, 6 assignFinds M0<-H1, and assignConnects before 5 has a chance to assignFind!"  
+- bAssignDone was not allowing recalculation of M1<-M1 so 6 greedily took the tp without 5 getting to check if 5M1<-5M2 better than 6M0<-6H1
+
+"6 -> 5
+which starts a new track in 5
+6 then starts a track whith a dup of the tp of the new track in 5"
+- this is just because the dup wasn't marked ... lower maxcostmatch
+
+tracks having floating ends
+check aborb and mintrackpoint!
+
+shortcut all the writeInit aand synthInit from cache!
+pointers to vectors necessary faster???
+no, but references are a pain in the ass
+check on tp flags
+optimize opengl
+track amplitudes - shader does log?
+
+audio/samples/beet.wav
+c = 0
+f = 360
+t = 4800 - 5000
+band = 5
