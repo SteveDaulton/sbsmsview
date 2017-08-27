@@ -6,11 +6,271 @@
 #include "sms.h"
 #include "pcm.h"
 #include <pthread.h>
+#include <string.h> 
+
+
+#define GLERROR { GLenum error = glGetError(); if(error) { printf("%d\n",error); abort(); } }
 
 class ASCII {
 public:
 static const int a = 65;
 static const int s = 83;
+};
+
+const char vertexShaderLines[] = {
+  "attribute vec4 position;\n"
+  "attribute vec4 sourceColour;\n"
+  "\n"
+  "uniform mat4 pvMatrix;\n"
+  "uniform float size;\n"
+  "\n"
+  "varying vec4 destinationColour;\n"
+  "\n"
+  "void main()\n"
+  "{\n"
+  "    destinationColour = sourceColour;\n"
+  "    gl_Position = pvMatrix * position;\n"
+  "    gl_PointSize = size;\n"
+  "}\n"
+};
+
+
+
+const char fragmentShaderLines[] = {
+  "uniform vec4 colorScale;\n"
+#if JUCE_OPENGL_ES
+  "varying lowp vec4 destinationColour;\n"
+#else
+  "varying vec4 destinationColour;\n"
+#endif
+  "\n"
+  "uniform sampler2D texturePoint;\n"
+  "void main()\n"
+  "{\n"
+  "  vec4 texColor = texture2D(texturePoint, gl_PointCoord);\n"
+  "  vec4 finalColor = texColor * destinationColour;\n"
+  "  gl_FragColor = colorScale * finalColor;\n"
+  "}\n"
+};
+
+/*
+const char fragmentShaderLines[] = {
+  "uniform vec4 colorScale;\n"
+#if JUCE_OPENGL_ES
+  "varying lowp vec4 destinationColour;\n"
+#else
+  "varying vec4 destinationColour;\n"
+#endif
+  "\n"
+  "void main()\n"
+  "{\n"
+  "    gl_FragColor = colorScale * destinationColour;\n"
+  "}\n"
+};
+*/
+
+
+const char vertexShaderLinesThick[] = {
+"#version 330\n"
+"uniform mat4 pvMatrix;\n"
+
+"layout(location = 0) in vec4 Vertex;\n"
+"layout(location = 1) in vec4 Color;\n"
+
+"out VertexData {\n"
+"  vec4 mColor;\n"
+"} VertexOut;\n"
+
+"void main(void) {\n"
+"  VertexOut.mColor = Color;\n"
+"  gl_Position = pvMatrix * Vertex;\n"
+"}\n"
+};
+
+
+const char fragmentShaderLinesThick[] = {
+"#version 330\n"
+"uniform vec4 colorScale;\n"
+"out vec4 fragColor;\n"
+"in VertexData{\n"
+"  vec2 mTexCoord;\n"
+"  vec4 mColor;\n"
+"} VertexIn;\n"
+"\n"
+"void main(void)\n"
+"{\n"
+"  fragColor = colorScale * VertexIn.mColor;\n"
+"}\n"
+};
+
+const char geometryShaderLinesThick[] = {
+"#version 330\n"
+"uniform float Thickness;\n"
+"uniform float MiterLimit;\n"
+"\n"
+"layout(lines_adjacency) in;\n"
+"layout(triangle_strip, max_vertices = 7) out;\n"
+"\n"
+"in VertexData{\n"
+"    vec4 mColor;\n"
+"} VertexIn[4];\n"
+"\n"
+"out VertexData{\n"
+"    vec2 mTexCoord;\n"
+"    vec4 mColor;\n"
+"} VertexOut;\n"
+"\n"
+"vec2 toScreenSpace(vec4 vertex)\n"
+"{\n"
+//"    return vec2( vertex.xy / vertex.w ) * Viewport;\n"
+"    return vertex.xy;\n"
+"}\n"
+"\n"
+"float toZValue(vec4 vertex)\n"
+"{\n"
+//"    return (vertex.z/vertex.w);\n"
+"    return (vertex.z);\n"
+"}\n"
+"\n"
+"void drawSegment(vec2 points[4], vec4 colors[4], float zValues[4])\n"
+"{\n"
+"    vec2 p0 = points[0];\n"
+"    vec2 p1 = points[1];\n"
+"    vec2 p2 = points[2];\n"
+"    vec2 p3 = points[3];\n"
+"\n"
+"    /* perform naive culling */\n"
+//"    vec2 area = Viewport * 4;\n"
+//"    if( p1.x < -area.x || p1.x > area.x ) return;\n"
+//"    if( p1.y < -area.y || p1.y > area.y ) return;\n"
+//"    if( p2.x < -area.x || p2.x > area.x ) return;\n"
+//"    if( p2.y < -area.y || p2.y > area.y ) return;\n"
+"\n"
+"    /* determine the direction of each of the 3 segments (previous, current, next) */\n"
+"    vec2 v0 = normalize( p1 - p0 );\n"
+"    vec2 v1 = normalize( p2 - p1 );\n"
+"    vec2 v2 = normalize( p3 - p2 );\n"
+"\n"
+"    /* determine the normal of each of the 3 segments (previous, current, next) */\n"
+"    vec2 n0 = vec2( -v0.y, v0.x );\n"
+"    vec2 n1 = vec2( -v1.y, v1.x );\n"
+"    vec2 n2 = vec2( -v2.y, v2.x );\n"
+"\n"
+"    /* determine miter lines by averaging the normals of the 2 segments */\n"
+"    vec2 miter_a = normalize( n0 + n1 );	// miter at start of current segment\n"
+"    vec2 miter_b = normalize( n1 + n2 ); // miter at end of current segment\n"
+"\n"
+"    /* determine the length of the miter by projecting it onto normal and then inverse it */\n"
+"    float an1 = dot(miter_a, n1);\n"
+"    float bn1 = dot(miter_b, n2);\n"
+"    if (an1==0) an1 = 1;\n"
+"    if (bn1==0) bn1 = 1;\n"
+"    float length_a = Thickness / an1;\n"
+"    float length_b = Thickness / bn1;\n"
+"\n"
+"    /* prevent excessively long miters at sharp corners */\n"
+"    if( dot( v0, v1 ) < -MiterLimit ) {\n"
+"        miter_a = n1;\n"
+"        length_a = Thickness;\n"
+"\n"
+"        /* close the gap */\n"
+"        if( dot( v0, n1 ) > 0 ) {\n"
+"            VertexOut.mTexCoord = vec2( 0, 0 );\n"
+"            VertexOut.mColor = colors[1];\n"
+"            gl_Position = vec4( ( p1 + Thickness * n0 ), zValues[1], 1.0 );\n"
+"            EmitVertex();\n"
+"\n"
+"            VertexOut.mTexCoord = vec2( 0, 0 );\n"
+"            VertexOut.mColor = colors[1];\n"
+"            gl_Position = vec4( ( p1 + Thickness * n1 ), zValues[1], 1.0 );\n"
+"            EmitVertex();\n"
+"\n"
+"            VertexOut.mTexCoord = vec2( 0, 0.5 );\n"
+"            VertexOut.mColor = colors[1];\n"
+"            gl_Position = vec4( p1, 0.0, 1.0 );\n"
+"            EmitVertex();\n"
+"\n"
+"            EndPrimitive();\n"
+"        }\n"
+"        else {\n"
+"            VertexOut.mTexCoord = vec2( 0, 1 );\n"
+"            VertexOut.mColor = colors[1];\n"
+"            gl_Position = vec4( ( p1 - Thickness * n1 ), zValues[1], 1.0 );\n"
+"            EmitVertex();\n"
+"\n"
+"            VertexOut.mTexCoord = vec2( 0, 1 );\n"
+"            VertexOut.mColor = colors[1];\n"
+"            gl_Position = vec4( ( p1 - Thickness * n0 ), zValues[1], 1.0 );\n"
+"            EmitVertex();\n"
+"\n"
+"            VertexOut.mTexCoord = vec2( 0, 0.5 );\n"
+"            VertexOut.mColor = colors[1];\n"
+"            gl_Position = vec4( p1 , zValues[1], 1.0 );\n"
+"            EmitVertex();\n"
+"\n"
+"            EndPrimitive();\n"
+"        }\n"
+"    }\n"
+"    if( dot( v1, v2 ) < -MiterLimit ) {\n"
+"        miter_b = n1;\n"
+"        length_b = Thickness;\n"
+"    }\n"
+"    // generate the triangle strip\n"
+"    VertexOut.mTexCoord = vec2( 0, 0 );\n"
+"    VertexOut.mColor = colors[1];\n"
+"    gl_Position = vec4( ( p1 + length_a * miter_a ), zValues[1], 1.0 );\n"
+"    EmitVertex();\n"
+"\n"
+"    VertexOut.mTexCoord = vec2( 0, 1 );\n"
+"    VertexOut.mColor = colors[1];\n"
+"    gl_Position = vec4( ( p1 - length_a * miter_a ), zValues[1], 1.0 );\n"
+"    EmitVertex();\n"
+"\n"
+"    VertexOut.mTexCoord = vec2( 0, 0 );\n"
+"    VertexOut.mColor = colors[2];\n"
+"    gl_Position = vec4( ( p2 + length_b * miter_b ), zValues[2], 1.0 );\n"
+"    EmitVertex();\n"
+"\n"
+"    VertexOut.mTexCoord = vec2( 0, 1 );\n"
+"    VertexOut.mColor = colors[2];\n"
+"    gl_Position = vec4( ( p2 - length_b * miter_b ), zValues[2], 1.0 );\n"
+"    EmitVertex();\n"
+"\n"
+"    EndPrimitive();\n"
+"}\n"
+"\n"
+"void main(void)\n"
+"{\n"
+"    // 4 points\n"
+"    vec4 Points[4];\n"
+"    Points[0] = gl_in[0].gl_Position;\n"
+"    Points[1] = gl_in[1].gl_Position;\n"
+"    Points[2] = gl_in[2].gl_Position;\n"
+"    Points[3] = gl_in[3].gl_Position;\n"
+"\n"
+"    // 4 attached colors\n"
+"    vec4 colors[4];\n"
+"    colors[0] = VertexIn[0].mColor;\n"
+"    colors[1] = VertexIn[1].mColor;\n"
+"    colors[2] = VertexIn[2].mColor;\n"
+"    colors[3] = VertexIn[3].mColor;\n"
+"\n"
+"    // screen coords\n"
+"    vec2 points[4];\n"
+"    points[0] = toScreenSpace(Points[0]);\n"
+"    points[1] = toScreenSpace(Points[1]);\n"
+"    points[2] = toScreenSpace(Points[2]);\n"
+"    points[3] = toScreenSpace(Points[3]);\n"
+"\n"
+"    // deepness values\n"
+"    float zValues[4];\n"
+"    zValues[0] = toZValue(Points[0]);\n"
+"    zValues[1] = toZValue(Points[1]);\n"
+"    zValues[2] = toZValue(Points[2]);\n"
+"    zValues[3] = toZValue(Points[3]);\n"
+"\n"
+"    drawSegment(points, colors, zValues);\n"
+"}"
 };
 
 const char vertexShaderLinesUniformColor[] = {
@@ -28,39 +288,9 @@ const char fragmentShaderLinesUniformColor[] = {
   "uniform vec4 color;\n"
   "void main()\n"
   "{\n"
-  "    gl_FragColor = color;"
+  "    gl_FragColor = color;\n"
   "}\n"
 };
-
-const char vertexShaderLines[] = {
-  "attribute vec4 position;\n"
-  "attribute vec4 sourceColour;\n"
-  "\n"
-  "uniform mat4 pvMatrix;\n"
-  "\n"
-  "varying vec4 destinationColour;\n"
-  "\n"
-  "void main()\n"
-  "{\n"
-  "    destinationColour = sourceColour;\n"
-  "    gl_Position = pvMatrix * position;\n"
-  "}\n"
-};
-
-const char fragmentShaderLines[] = {
-  "uniform vec4 colorScale;\n"
-#if JUCE_OPENGL_ES
-  "varying lowp vec4 destinationColour;\n"
-#else
-  "varying vec4 destinationColour;\n"
-#endif
-  "\n"
-  "void main()\n"
-  "{\n"
-  "    gl_FragColor = colorScale * destinationColour;"
-  "}\n"
-};
-
 
 
 const char vertexShaderTex[] = {
@@ -128,9 +358,9 @@ void WaveDisplay :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, minMaxVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &rmsVBOId);
   glGenVertexArrays(1, &rmsVAOId);
@@ -138,9 +368,9 @@ void WaveDisplay :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, rmsVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 }
 
 void WaveDisplay :: renderOpenGL()
@@ -282,6 +512,7 @@ void WaveDisplay :: renderOpenGL()
 
 void WaveDisplay :: openGLContextClosing()
 {
+  printf("NOO\n");
 }
 
 bool TimeFrequencyView :: shouldAssign(int band, TrackPoint *tp, TrackIndexType index) 
@@ -338,9 +569,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, trackVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &trackScaleVBOId);
   glGenVertexArrays(1, &trackScaleVAOId);
@@ -348,9 +579,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, trackScaleVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &trackDtVBOId);
   glGenVertexArrays(1, &trackDtVAOId);
@@ -358,9 +589,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, trackDtVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &trackDPhVBOId);
   glGenVertexArrays(1, &trackDPhVAOId);
@@ -368,9 +599,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, trackDPhVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &trackMeritVBOId);
   glGenVertexArrays(1, &trackMeritVAOId);
@@ -378,9 +609,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, trackMeritVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &totalMeritVBOId);
   glGenVertexArrays(1, &totalMeritVAOId);
@@ -388,9 +619,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, totalMeritVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &trackOnsetVBOId);
   glGenVertexArrays(1, &trackOnsetVAOId);
@@ -398,9 +629,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, trackOnsetVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 
   glGenBuffers(1, &trackOffsetVBOId);
   glGenVertexArrays(1, &trackOffsetVAOId);
@@ -408,9 +639,9 @@ void TrackView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
   glBindBuffer(GL_ARRAY_BUFFER, trackOffsetVBOId);
   glEnableVertexAttribArray(positionAttribId);
   glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+  //glDisableVertexAttribArray(positionAttribId);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
-  glDisableVertexAttribArray(positionAttribId);
 }
 
 void TrackView :: openGLContextClosing()
@@ -633,18 +864,18 @@ void SpectrumView :: newOpenGLContextCreated(OpenGLContext *openGlContext)
     
     glEnableVertexAttribArray(positionAttribId);
     glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+    //glDisableVertexAttribArray(positionAttribId);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
-    glDisableVertexAttribArray(positionAttribId);
-
+    
     if(which == 0) {
       glBindVertexArray(cutsVAOId[band]);
       glBindBuffer(GL_ARRAY_BUFFER, cutsVBOId[band]);
       glEnableVertexAttribArray(positionAttribId);
       glVertexAttribPointer(positionAttribId, 2, GL_FLOAT, GL_FALSE, sizeof(position), 0);
+      //glDisableVertexAttribArray(positionAttribId);
       glBindBuffer(GL_ARRAY_BUFFER, 0);
       glBindVertexArray(0);
-      glDisableVertexAttribArray(positionAttribId);
     }
   }  
 }
@@ -756,7 +987,6 @@ void SpectrumView :: renderOpenGL()
             lines.push_back(pos);
             pos.x = min((float)w,max(0.0f,scale * mag[k]));
             lines.push_back(pos);
-            //printf("%d %d %d %d %d %g\n",band,bandtime,minK,k,maxK,pos.x);
           }
           glBindVertexArray(cutsVAOId[band]);
           glBindBuffer(GL_ARRAY_BUFFER, cutsVBOId[band]);
@@ -921,9 +1151,9 @@ const float mouseSelectDist = 2.0f;
 
 void TimeFrequencyOverlay :: mouseMove(const MouseEvent& e)
 {
-  if(fabsf(e.x - xScale * (leftPos - startSample)) < mouseSelectDist) {
+  if(fabs(e.x - xScale * (leftPos - startSample)) < mouseSelectDist) {
     setMouseCursor(MouseCursor::LeftRightResizeCursor);
-  } else if(rightPos > 0 && fabsf(e.x - xScale * (rightPos - startSample)) < mouseSelectDist) {
+  } else if(rightPos > 0 && fabs(e.x - xScale * (rightPos - startSample)) < mouseSelectDist) {
     setMouseCursor(MouseCursor::LeftRightResizeCursor);
   } else {
     setMouseCursor(MouseCursor::NormalCursor);
@@ -947,10 +1177,10 @@ void TimeFrequencyOverlay :: mouseDown (const MouseEvent& e)
   if(e.mods.isCommandDown()) {
     selectAnchorPoint = e.position;
   } else {
-    if(fabsf(e.x - xScale * (leftPos - startSample)) < mouseSelectDist) {
+    if(fabs(e.x - xScale * (leftPos - startSample)) < mouseSelectDist) {
       setMouseCursor(MouseCursor::LeftRightResizeCursor);
       dragging = Left;
-    } else if(rightPos > 0 && fabsf(e.x - xScale * (rightPos - startSample)) < mouseSelectDist) {
+    } else if(rightPos > 0 && fabs(e.x - xScale * (rightPos - startSample)) < mouseSelectDist) {
       setMouseCursor(MouseCursor::LeftRightResizeCursor);
       dragging = Right;
     } else {
@@ -1109,8 +1339,10 @@ void TimeFrequencyView :: render(const SBSMSRenderChunk &i, Track *t, Debugger *
 //constructor
 TimeFrequencyView :: TimeFrequencyView(SBSMS *sbsmsSrc) 
   : shaderLines(openGLContext),
-    shaderTex(openGLContext)
+    shaderTex(openGLContext),
+    shaderLinesThick(openGLContext)
 {
+  
   hScroll = new ScrollBar(false);
   hScroll->addListener(this);
   hScroll->setAutoHide(false);
@@ -1175,11 +1407,10 @@ TimeFrequencyView :: TimeFrequencyView(SBSMS *sbsmsSrc)
   addAndMakeVisible(spectrumTrial);
   addAndMakeVisible(trackView);
 
-  pthread_mutex_init(&glMutex,NULL);
-  openGLContext.setRenderer (this);
-  openGLContext.attachTo (*this);
-  
+
+
   this->sbsms = new SBSMS(sbsmsSrc,false);
+  bands = sbsms->getQuality()->params.bands;
 
   minF = 0.0f;
   maxF = M_PI;
@@ -1200,7 +1431,7 @@ TimeFrequencyView :: TimeFrequencyView(SBSMS *sbsmsSrc)
 
   SBSMSInterfaceVariableRate iface(totSamples);
 
-  bands = sbsms->getQuality()->params.bands;
+
   channel = 0;
   for(int band=0; band<bands; band++) {
     bEnableBand[band] = true;
@@ -1276,6 +1507,15 @@ TimeFrequencyView :: TimeFrequencyView(SBSMS *sbsmsSrc)
   vScroll->setCurrentRange(-view->endF,view->endF-view->startF,dontSendNotification);
 
   rateCtrl->setValue(1.0f);
+
+
+  pthread_mutex_init(&glMutex,NULL);
+  openGLContext.setOpenGLVersionRequired(juce::OpenGLContext::openGL3_2);
+  //openGLContext.setOpenGLVersionRequired(juce::OpenGLContext::defaultGLVersion);
+  openGLContext.setRenderer (this);
+  openGLContext.attachTo (*this);
+
+
 }
 
 
@@ -1396,7 +1636,7 @@ void TimeFrequencyView :: statusChanged(SampleCountType pos, float f, int comman
           long index = cache->indexAtTime[time];
           for(int i = 0; i < nTracks; i++) {
             TrackPoint *tp = cache->trackPoints[index+i];
-            float df = fabsf(f - tp->f);
+            float df = fabs(f - tp->f);
             if(df < mindf) {
               mindf = df;
               mintp = tp;
@@ -1586,6 +1826,7 @@ void TimeFrequencyView :: paint(Graphics &g)
 void TimeFrequencyView :: renderOpenGL()
 {
   pthread_mutex_lock(&glMutex);
+
   OpenGLHelpers::clear (Colours::black);
   
   const float desktopScale = (float) openGLContext.getRenderingScale();
@@ -1596,6 +1837,7 @@ void TimeFrequencyView :: renderOpenGL()
   glViewport(x0, y0, w, h);
   glScissor(x0, y0, w, h);
 
+  glEnable(GL_PROGRAM_POINT_SIZE);
   glEnable(GL_SCISSOR_TEST);
   glEnable (GL_DEPTH_TEST);
   glDepthFunc (GL_LESS);
@@ -1628,110 +1870,117 @@ void TimeFrequencyView :: renderOpenGL()
   mat4_translate(pvMatrix,v,NULL);
 
   if(bRenderSpectrum) {
-  shaderTex.use();
-  glUniformMatrix4fv(pvMatrixUniformId_Tex, 1, GL_FALSE, (const GLfloat*)pvMatrix);
-  glUniform1i(textureMapUniformId_Tex,0);
-  
-
-  for(int band=0; band<bands; band++) {
-    if(bEnableBand[band])
-      for(int i=0; i<spectrogram[whichgram][channel][band].size(); i++) {
-        texQuad &quad = spectrogram[whichgram][channel][band][i];
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D,quad.texId);
-        glBindVertexArray(quad.vaoId);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindTexture(GL_TEXTURE_2D,0);
-        glBindVertexArray(0);
-      }
-  }
-
+    shaderTex.use();
+    glUniformMatrix4fv(pvMatrixUniformId_Tex, 1, GL_FALSE, (const GLfloat*)pvMatrix);
+    glUniform1i(textureMapUniformId_Tex,0);
+        
+    for(int band=0; band<bands; band++) {
+      if(bEnableBand[band])
+        for(int i=0; i<spectrogram[whichgram][channel][band].size(); i++) {
+          texQuad &quad = spectrogram[whichgram][channel][band][i];
+          glActiveTexture(GL_TEXTURE0);
+          glBindTexture(GL_TEXTURE_2D,quad.texId);
+          glBindVertexArray(quad.vaoId);
+          glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+          glBindTexture(GL_TEXTURE_2D,0);
+          glBindVertexArray(0);
+        }
+    }
   }
 
 
   if(bRenderTracks) {
-  shaderLines.use();
-  glLineWidth(1);
+  shaderLinesThick.use();
 
   float colorScale[4] = {1.0f,1.0f,1.0f,1.0f};
-  glUniform4fv(colorScaleUniformId_Lines, 1, colorScale);
-
   v[0] = 0.0f;
   v[1] = 0.0f;
   v[2] = 0.5f;
   mat4_translate(pvMatrix,v,NULL);
 
-  glUniformMatrix4fv(pvMatrixUniformId_Tex, 1, GL_FALSE, (const GLfloat*)pvMatrix);
-;
+  glUniform1f(thicknessUniformId_Lines, .002);
+  glUniform1f(miterLimitUniformId_Lines, 0.001);
+  glUniform4fv(colorScaleUniformId_Lines, 1, colorScale);
+  glUniformMatrix4fv(pvMatrixUniformId_Lines, 1, GL_FALSE, (const GLfloat*)pvMatrix);
 
  // all tracks
  for(int band=0; band<bands; band++) {
    if(bEnableBand[band]) {
-     glBindVertexArray(vaoId[channel][band]);
-     glMultiDrawArrays(GL_LINE_STRIP, allOffsets[channel][band].data(), allCounts[channel][band].data(), allCounts[channel][band].size());
+     glBindVertexArray(vaoId_Lines[channel][band]);
+     glMultiDrawArrays(GL_LINE_STRIP_ADJACENCY, allOffsets[channel][band].data(), allCounts[channel][band].data(), allCounts[channel][band].size());
      glBindVertexArray(0);
    }
  }
 
+
+ // selected tracks
+  float colorScaleSelected[4] = {1.25f,1.5f,0.75f,1.0f};
+  glUniform4fv(colorScaleUniformId_Lines, 1, colorScaleSelected);
+  glUniform1f(thicknessUniformId_Lines, .006);
+  for(int band=0; band<bands; band++) {
+    if(bEnableBand[band]) {
+      glBindVertexArray(vaoId_Lines[channel][band]);
+      glMultiDrawArrays(GL_LINE_STRIP_ADJACENCY, selectedOffsets[band].data(), selectedCounts[band].data(), selectedCounts[band].size());
+      glBindVertexArray(0);
+    }
+  }
+
+  // current selected track
+  float colorScaleCurrent[4] = {1.5f,2.0f,1.0f,1.0f};
+  glUniform4fv(colorScaleUniformId_Lines, 1, colorScaleCurrent);
+  glUniform1f(thicknessUniformId_Lines, .01);
+  if(selectedTrackSize) {
+    if(bEnableBand[selectedTrackBand]) {
+      glBindVertexArray(vaoId_Lines[channel][selectedTrackBand]);
+      glDrawArrays(GL_LINE_STRIP_ADJACENCY, selectedTrackOffset, selectedTrackSize);
+      glBindVertexArray(0);
+    }
+  }
+
   // all points
-  glEnable(GL_POINT_SMOOTH);
-  glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+ shaderLines.use();
+ glUniform4fv(colorScaleUniformId_Points, 1, colorScale);
+ glUniformMatrix4fv(pvMatrixUniformId_Points, 1, GL_FALSE, (const GLfloat*)pvMatrix);
+
+ glActiveTexture(GL_TEXTURE1);
+ glBindTexture(GL_TEXTURE_2D,texturePointId);
+ glUniform1i(texturePointUniformId_Points,1);
+ glEnable(GL_BLEND);
+ glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
   float scaleF = 30.0f;
   float scaleT = 1.0f;
   for(int band=0; band<bands; band++) {
     if(bEnableBand[band]) {
-      int pointSize = max(1,
-                          min(8,
+      int pointSize = max(2,
+                          min(12,
                               min((int)lrintf(w/(scaleT*(view->endSample-view->startSample)/(view->frameSize/sbsms->getQuality()->getBandGrainsPerFrame(band)))),
                                   (int)lrintf(h/(scaleF*(view->endF-view->startF))))));
-      glPointSize(pointSize);      
+
+      glUniform1f(sizeUniformId_Points, pointSize);
       glBindVertexArray(vaoId[channel][band]);
       glMultiDrawArrays(GL_POINTS, allOffsets[channel][band].data(), allCounts[channel][band].data(), allCounts[channel][band].size());
       glBindVertexArray(0);
     }
     scaleF *= 2.0f;
   }
-
- // selected tracks
-  float colorScaleSelected[4] = {1.25f,1.5f,0.75f,1.0f};
-  glUniform4fv(colorScaleUniformId_Lines, 1, colorScaleSelected);
-  for(int band=0; band<bands; band++) {
-    if(bEnableBand[band]) {
-      glLineWidth(8);
-      glBindVertexArray(vaoId[channel][band]);
-      glMultiDrawArrays(GL_LINE_STRIP, selectedOffsets[band].data(), selectedCounts[band].data(), selectedCounts[band].size());
-      glBindVertexArray(0);
-    }
-  }
-
-  // current selected track
-  if(selectedTrackSize) {
-    if(bEnableBand[selectedTrackBand]) {
-      float colorScaleCurrent[4] = {1.5f,2.0f,1.0f,1.0f};
-      glUniform4fv(colorScaleUniformId_Lines, 1, colorScaleCurrent);
-      glLineWidth(6);
-      glBindVertexArray(vaoId[channel][selectedTrackBand]);
-      glDrawArrays(GL_LINE_STRIP, selectedTrackOffset, selectedTrackSize);
-      glBindVertexArray(0);
-    }
-  }
-
-  
   // selected point
   if(selectedPoint && bEnableBand[selectedPointBand]) {
       float scaleF = 20.0f;
       float scaleT = 0.4f;
-      int pointSize = max(2,
-                          min(12,
+      int pointSize = max(8,
+                          min(26,
                               min((int)lrintf(w/(scaleT*(view->endSample-view->startSample)/(view->frameSize/sbsms->getQuality()->getBandGrainsPerFrame(selectedPointBand)))),
                                   (int)lrintf(h/(scaleF*(view->endF-view->startF))))));
       TimeType startTime = trackStartTime[channel][selectedPointBand][selectedPointTrackIndex];
-      glPointSize(pointSize);
+      glUniform1f(sizeUniformId_Points, pointSize);
       glBindVertexArray(vaoId[channel][selectedPointBand]);
       glDrawArrays(GL_POINTS, selectedTrackOffset+selectedPointTime-startTime, 1);
       glBindVertexArray(0);
   }
   
+  glBindTexture(GL_TEXTURE_2D,0);
+
   }
 
   spectrum1->renderOpenGL();
@@ -1740,17 +1989,11 @@ void TimeFrequencyView :: renderOpenGL()
   trackView->renderOpenGL();
   waveDisplay->renderOpenGL();
 
-  GLenum error = glGetError();
-  if(error) {
-    printf("%d\n",error);
-    abort();
-  }
-
+  
   glUseProgram(0);
-  glDisable(GL_POINT_SMOOTH);
   glDisable(GL_BLEND);
   glDisable(GL_DEPTH_TEST);
-  glDisable(GL_SCISSOR_TEST);
+  glDisable(GL_SCISSOR_TEST);  
 
   pthread_mutex_unlock(&glMutex); 
 }
@@ -1758,6 +2001,11 @@ void TimeFrequencyView :: renderOpenGL()
 
 void TimeFrequencyView :: newOpenGLContextCreated() 
 {
+  shaderLinesThick.addVertexShader((vertexShaderLinesThick));
+  shaderLinesThick.addShader(geometryShaderLinesThick, GL_GEOMETRY_SHADER);
+  shaderLinesThick.addFragmentShader((fragmentShaderLinesThick));
+  shaderLinesThick.link();
+
   shaderLines.addVertexShader(OpenGLHelpers::translateVertexShaderToV3(vertexShaderLines));
   shaderLines.addFragmentShader(OpenGLHelpers::translateFragmentShaderToV3(fragmentShaderLines));
   shaderLines.link();
@@ -1766,20 +2014,58 @@ void TimeFrequencyView :: newOpenGLContextCreated()
   shaderTex.addFragmentShader(OpenGLHelpers::translateFragmentShaderToV3(fragmentShaderTex));
   shaderTex.link();
 
-  positionAttribId_Lines = glGetAttribLocation(shaderLines.getProgramID(), "position");
-  colorAttribId_Lines = glGetAttribLocation(shaderLines.getProgramID(), "sourceColour");
-  pvMatrixUniformId_Lines = glGetUniformLocation(shaderLines.getProgramID(), "pvMatrix");
-  colorScaleUniformId_Lines = glGetUniformLocation(shaderLines.getProgramID(), "colorScale");
+  positionAttribId_Lines = glGetAttribLocation(shaderLinesThick.getProgramID(), "Vertex");
+  colorAttribId_Lines = glGetAttribLocation(shaderLinesThick.getProgramID(), "Color");
+  pvMatrixUniformId_Lines = glGetUniformLocation(shaderLinesThick.getProgramID(), "pvMatrix");
+  colorScaleUniformId_Lines = glGetUniformLocation(shaderLinesThick.getProgramID(), "colorScale");
+  thicknessUniformId_Lines = glGetUniformLocation(shaderLinesThick.getProgramID(), "Thickness");
+  miterLimitUniformId_Lines = glGetUniformLocation(shaderLinesThick.getProgramID(), "MiterLimit");
+  
+  positionAttribId_Points = glGetAttribLocation(shaderLines.getProgramID(), "position");
+  colorAttribId_Points = glGetAttribLocation(shaderLines.getProgramID(), "sourceColour");
+  pvMatrixUniformId_Points = glGetUniformLocation(shaderLines.getProgramID(), "pvMatrix");
+  colorScaleUniformId_Points = glGetUniformLocation(shaderLines.getProgramID(), "colorScale");
+  sizeUniformId_Points = glGetUniformLocation(shaderLines.getProgramID(), "size");
+  texturePointUniformId_Points = glGetUniformLocation(shaderLines.getProgramID(), "texturePoint");
 
   positionAttribId_Tex = glGetAttribLocation(shaderTex.getProgramID(), "position");
   textureCoordAttribId_Tex = glGetAttribLocation(shaderTex.getProgramID(), "textureCoordIn");
   pvMatrixUniformId_Tex = glGetUniformLocation(shaderTex.getProgramID(), "pvMatrix");
-textureMapUniformId_Tex = glGetUniformLocation(shaderTex.getProgramID(), "textureMap");
+  textureMapUniformId_Tex = glGetUniformLocation(shaderTex.getProgramID(), "textureMap");
+
+
+  /* Point Texture */
+  glGenTextures(1,&texturePointId);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D,texturePointId);
+
+  texturePoint.height = 25;
+  texturePoint.width = 25;
+  texturePoint.data = new pixel[texturePoint.height * texturePoint.width];
+  int k = 0;
+  for(int i=0; i<texturePoint.width; i++) {
+    for(int j=0; j<texturePoint.height; j++) {
+      float d = square(i - texturePoint.width/2) + square(j - texturePoint.height/2);
+      if(d <= square(0.5*texturePoint.width)) {
+        texturePoint.data[k] = {255,255,255,255};
+      } else {
+        texturePoint.data[k] = {0,0,0,0};
+      }
+      k++;
+    }
+  }
+  glPixelStorei (GL_UNPACK_ALIGNMENT, 4);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texturePoint.width, texturePoint.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, texturePoint.data);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  glBindTexture(GL_TEXTURE_2D, 0);
 
   // tracks
   for(int c=0; c<sbsms->getChannels(); c++) {
+
     glGenBuffers(bands, vboId[c]);
     glGenVertexArrays(bands, vaoId[c]);
+    glGenVertexArrays(bands, vaoId_Lines[c]);
 
     for(int band=0; band<bands; band++) {
       int start = 0;  
@@ -1794,21 +2080,36 @@ textureMapUniformId_Tex = glGetUniformLocation(shaderTex.getProgramID(), "textur
         start += i->second.vertices.size();
       }
       
-      glBindVertexArray(vaoId[c][band]);
+      // buffer vertex data
       glBindBuffer(GL_ARRAY_BUFFER, vboId[c][band]);
       glBufferData(GL_ARRAY_BUFFER, sizeof(vertex) * allVBO[c][band].size(), allVBO[c][band].data(), GL_STATIC_DRAW);
+      glBindBuffer(GL_ARRAY_BUFFER, 0);
+    
+      // make vao for points
+      glBindVertexArray(vaoId[c][band]);
+      glBindBuffer(GL_ARRAY_BUFFER, vboId[c][band]);
+      glEnableVertexAttribArray(positionAttribId_Points);
+      glEnableVertexAttribArray(colorAttribId_Points);
+      glVertexAttribPointer(positionAttribId_Points, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), 0);
+      glVertexAttribPointer(colorAttribId_Points, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex),   (void*)(sizeof( float ) * 2));
+      //glDisableVertexAttribArray(colorAttribId_Points);
+      //glDisableVertexAttribArray(positionAttribId_Points);
+      glBindVertexArray(0);
+
+      // vao for lines
+      glBindVertexArray(vaoId_Lines[c][band]);
+      glBindBuffer(GL_ARRAY_BUFFER, vboId[c][band]); 
       glEnableVertexAttribArray(positionAttribId_Lines);
       glEnableVertexAttribArray(colorAttribId_Lines);
       glVertexAttribPointer(positionAttribId_Lines, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), 0);
       glVertexAttribPointer(colorAttribId_Lines, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex),   (void*)(sizeof( float ) * 2));
-      glBindBuffer(GL_ARRAY_BUFFER, 0);
+      //glDisableVertexAttribArray(colorAttribId_Lines);
+      //glDisableVertexAttribArray(positionAttribId_Lines);
       glBindVertexArray(0);
-      glDisableVertexAttribArray(positionAttribId_Lines);
-      glDisableVertexAttribArray(colorAttribId_Lines);
-
     }
   }
   
+
   // spectogram textures
   for(int which=0; which<3; which++) {
     for(int c=0; c<sbsms->getChannels(); c++) {
@@ -1823,8 +2124,8 @@ textureMapUniformId_Tex = glGetUniformLocation(shaderTex.getProgramID(), "textur
                               x0, topF[band], 1.0f,0.0f,
                               x1, botF[band], 0.0f,1.0f,
                               x1, topF[band], 1.0f,1.0f};
-        
-          
+
+
           glGenTextures(1,&quad.texId);
           glGenVertexArrays(1,&quad.vaoId);
           glGenBuffers(1,&quad.vboId);
@@ -1832,7 +2133,7 @@ textureMapUniformId_Tex = glGetUniformLocation(shaderTex.getProgramID(), "textur
           glBindTexture(GL_TEXTURE_2D,quad.texId);      
           glPixelStorei (GL_UNPACK_ALIGNMENT, 4);
           glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex.data);
-          
+
           glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
           glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
           glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -1846,14 +2147,15 @@ textureMapUniformId_Tex = glGetUniformLocation(shaderTex.getProgramID(), "textur
           glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 16, coords, GL_STATIC_DRAW);
           glVertexAttribPointer(positionAttribId_Tex, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), 0);
           glVertexAttribPointer(textureCoordAttribId_Tex, 2, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(sizeof( float ) * 2));
+          //glDisableVertexAttribArray(positionAttribId_Tex);
+          //glDisableVertexAttribArray(textureCoordAttribId_Tex);
           glBindBuffer(GL_ARRAY_BUFFER, 0);
           glBindVertexArray(0);
-          glDisableVertexAttribArray(positionAttribId_Tex);
-          glDisableVertexAttribArray(textureCoordAttribId_Tex);
         }
       }
     }
   }
+
   spectrum1->newOpenGLContextCreated(&openGLContext);
   spectrum2->newOpenGLContextCreated(&openGLContext);
   spectrumTrial->newOpenGLContextCreated(&openGLContext);
@@ -1968,7 +2270,7 @@ void TimeFrequencyView :: saveSelection()
       }      
     }
     delete [] abuf;
-    delete fbuf;    
+    delete [] fbuf;    
     writer.close();
   }
 }
@@ -2257,6 +2559,7 @@ void TimeFrequencyView :: setView(int pos0, int pos1, float f0, float f1)
 
 void TimeFrequencyView :: resized()
 {
+  
   int w = getWidth()-scrollSize-yAxisWidth-spectrumWidth;
   int h = getHeight()-scrollSize-xAxisHeight-trackViewHeight-controlsHeight-waveHeight;
 
@@ -2270,6 +2573,7 @@ void TimeFrequencyView :: resized()
   waveDisplay->setBounds(yAxisWidth+spectrumWidth,0,w,waveHeight);
   status->setBounds(2,getHeight()-controlsHeight + 2,spectrumWidth,controlsHeight - 4);
   rateCtrl->setBounds(spectrumWidth + 12,getHeight()-controlsHeight + 2,80,controlsHeight - 4);
+
 }
 
 

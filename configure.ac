@@ -46,7 +46,7 @@ cppflags_save="$CPPFLAGS"
 cxxflags_save="$CXXFLAGS"
 AC_LANG([C++])
 AC_PROG_CXX
-AC_PROG_CXXCPP
+AC_PROG_OBJCXX
 AX_COMPILER_VENDOR
 # restore those variables back
 CFLAGS="$cflags_save"
@@ -194,9 +194,9 @@ AM_CONDITIONAL(ENABLE_FFMPEG, test x$enable_ffmpeg = xyes)
 
 AC_SUBST(SBSMS_CFLAGS)
 
-AM_INIT_AUTOMAKE([no-dependencies])
+AM_INIT_AUTOMAKE([subdir-objects])
 
-AM_MAINTAINER_MODE([disable])
+#AM_MAINTAINER_MODE([disable])
 
 AC_CONFIG_FILES([Makefile src/Makefile])
 

@@ -1,5 +1,3 @@
-AM_CXXFLAGS = -I../include -I../JuceLibraryCode @SBSMS_CFLAGS@ @AVFORMAT_CFLAGS@ @AVCODEC_CFLAGS@ @AVUTIL_CFLAGS@ -DDEBUG -DPNG_NO_CONFIG_H -g -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -ObjC++
-
 bin_PROGRAMS = SBSMSView
 EXTRA_programs = SBSMSView
 
@@ -31,8 +29,17 @@ FRAMEWORKS = \
 	 -framework QuickTime \
 	 -framework WebKit
 
-SBSMSView_LDADD = @SNDFILE_LIBS@ @MAD_LIBS@ @AVCODEC_LIBS@ @AVFORMAT_LIBS@ @AVUTIL_LIBS@ -lgl-matrix
+SBSMSView_LDADD = @SNDFILE_LIBS@ @MAD_LIBS@ @AVCODEC_LIBS@ @AVFORMAT_LIBS@ @AVUTIL_LIBS@
 SBSMSView_LDFLAGS = $(os_ldflags)  $(FRAMEWORKS)
+SBSMSView_CXXFLAGS = -I../include -I/usr/local/include -I../JuceLibraryCode -I../JuceLibraryCode/modules @SBSMS_CFLAGS@ @AVFORMAT_CFLAGS@ @AVCODEC_CFLAGS@ @AVUTIL_CFLAGS@ -DDEBUG -DPNG_NO_CONFIG_H -g -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -ObjC++ -std=c++11
+
+gl_matrix_SOURCES = gl-matrix/gl-matrix.h \
+	gl-matrix/gl-matrix.h \
+	gl-matrix/mat3.c \
+	gl-matrix/mat4.c \
+	gl-matrix/quat.c \
+	gl-matrix/vec3.c \
+	gl-matrix/str.c
 
 juce_SOURCES = \
 	../JuceLibraryCode/modules/juce_audio_basics/juce_audio_basics.cpp \
@@ -86,6 +93,7 @@ SBSMSView_SOURCES = \
 	MainWindow.cpp MainWindow.h \
 	TimeFrequencyView.cpp TimeFrequencyView.h \
 	Audio.cpp Audio.h \
+	$(gl_matrix_SOURCES) \
 	$(juce_SOURCES)
 
 all: $(top_builddir)/approot/SBSMSView.app $(top_builddir)/mac/Info.plist $(top_builddir)/mac/PkgInfo

@@ -13,8 +13,6 @@ using namespace std;
 using namespace _sbsms_;
 #include "../JuceLibraryCode/JuceHeader.h"
 
-#include "OpenGL.h"
-
 
 class TimeFrequencyView;
 
@@ -44,9 +42,9 @@ class WaveDisplay : public OpenGLChildComponent {
 public:
   WaveDisplay(TimeFrequencyView *view);
   ~WaveDisplay() {}
-  void renderOpenGL();
-  void openGLContextClosing();
-  void newOpenGLContextCreated(OpenGLContext *openGlContext);
+  void renderOpenGL() override;
+  void openGLContextClosing() override;
+  void newOpenGLContextCreated(OpenGLContext *openGlContext) override;
   
   void paint(Graphics &g) override;
 
@@ -74,9 +72,9 @@ class TrackView
   void paint(Graphics &g) override;
 
   // this is not an openglrenderer, called from parent openglrenderer
-  void renderOpenGL();
-  void newOpenGLContextCreated(OpenGLContext *openGlContext); 
-  void openGLContextClosing();
+  void renderOpenGL() override;
+  void newOpenGLContextCreated(OpenGLContext *openGlContext) override; 
+  void openGLContextClosing() override;
 
   TimeFrequencyView *tfView;
   OpenGLShaderProgram shaderLines;
@@ -112,9 +110,9 @@ class SpectrumView
   void paint(Graphics &g) override;
 
   // this is not an openglrenderer, called from parent openglrenderer
-  void renderOpenGL();
-  void newOpenGLContextCreated(OpenGLContext *openGlContext); 
-  void openGLContextClosing();
+  void renderOpenGL() override;
+  void newOpenGLContextCreated(OpenGLContext *openGlContext) override; 
+  void openGLContextClosing() override;
 
   TimeFrequencyView *tfView;
   int which;
@@ -252,18 +250,19 @@ public:
   ~TimeFrequencyView();
 
   // opaque
-  void paint(Graphics& g);  
-  void render(const SBSMSRenderChunk &i, Track *t, Debugger *dbg);
-	void resized();
+  void paint(Graphics& g) override;  
+  void render(const SBSMSRenderChunk &i, Track *t, Debugger *dbg) override;
+	void resized() override;
+  void timerCallback() override;
   
-  void sliderValueChanged(Slider * slider);
+  void sliderValueChanged(Slider * slider) override;
   void mouseWheelMove (const MouseEvent&, const MouseWheelDetails& d) override;
   void statusChanged(SampleCountType pos, float y, int command) override;
   void statusChanged(const Rectangle<float> &r, int command) override;
 
-  bool shouldAssign(int band, TrackPoint *tp, TrackIndexType index);
-  bool shouldScale(int band, TrackPoint *tp, TrackIndexType index, int c);
-  bool shouldOnset(int band, TrackPoint *tp, TrackIndexType index);
+  bool shouldAssign(int band, TrackPoint *tp, TrackIndexType index) override;
+  bool shouldScale(int band, TrackPoint *tp, TrackIndexType index, int c) override;
+  bool shouldOnset(int band, TrackPoint *tp, TrackIndexType index) override;
   void selectAll();
 
   void markTrackOnset();
@@ -276,8 +275,8 @@ public:
   void zoomF(bool bIn);
   void setHScrollRange();
   void setVScrollRange();
-  bool keyPressed(const KeyPress &key, Component * originatingComponent);
-  void scrollBarMoved(ScrollBar *scrollBarThatHasMoved, double newRangeStart);
+  bool keyPressed(const KeyPress &key, Component * originatingComponent) override;
+  void scrollBarMoved(ScrollBar *scrollBarThatHasMoved, double newRangeStart) override;
   ScrollBar *hScroll;
   ScrollBar *vScroll;
 	SBSMS *sbsms;
@@ -303,29 +302,40 @@ public:
   float botF[10];
   float topF[10];
   int bands;
-  
-  GLuint vboId[2][10];
-  GLuint vaoId[2][10];
 
   OpenGLContext openGLContext;
   OpenGLShaderProgram shaderLines;
   OpenGLShaderProgram shaderTex;
+  OpenGLShaderProgram shaderLinesThick;
 
   GLuint positionAttribId_Lines;
   GLuint colorAttribId_Lines;
   GLuint pvMatrixUniformId_Lines;
   GLuint colorScaleUniformId_Lines;
+  GLuint thicknessUniformId_Lines;
+  GLuint miterLimitUniformId_Lines;
+  GLuint viewportUniformId_Lines;
+
+  GLuint positionAttribId_Points;
+  GLuint colorAttribId_Points;
+  GLuint pvMatrixUniformId_Points;
+  GLuint colorScaleUniformId_Points;
+  GLuint sizeUniformId_Points;
+  GLuint texturePointUniformId_Points;
 
   GLuint positionAttribId_Tex;
   GLuint textureCoordAttribId_Tex;
   GLuint pvMatrixUniformId_Tex;
   GLuint textureMapUniformId_Tex;
-  
+
+  GLuint texturePointId;
+  texture texturePoint;
+
   pthread_mutex_t glMutex;
-  void renderOpenGL();
+  void renderOpenGL() override;
   map<TrackIndexType, track > trackVBO[2][10];
-  void newOpenGLContextCreated(); 
-  void openGLContextClosing();
+  void newOpenGLContextCreated() override; 
+  void openGLContextClosing() override;
   map<TrackIndexType,unsigned long> trackStartIndex[2][10];
   map<TrackIndexType,TimeType> trackStartTime[2][10];
   long selectedTrackOffset;
@@ -379,7 +389,10 @@ public:
   SBSMSAudioSource *sbsmsAudioSource;
   TimeSliceThread *audioThread;
 
-  void timerCallback() override;
+  GLuint vboId[2][16];
+  GLuint vaoId[2][16];
+  GLuint vaoId_Lines[2][16];
+
 };
 
 
