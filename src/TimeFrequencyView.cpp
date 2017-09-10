@@ -2,7 +2,7 @@
 #include "convert.h"
 #include "track.h"
 #include <algorithm>
-#include <gl-matrix.h>
+#include <gl-matrix/gl-matrix.h>
 #include "sms.h"
 #include "pcm.h"
 #include <pthread.h>
